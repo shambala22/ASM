@@ -440,8 +440,6 @@ next_player:
   test_flag(second)
   jnz game_process_two
   set_flag(second)
-  mov ax, player2_table
-  mov [cur_table], ax
   mov ax, 1300h
   push bx
   mov bx, 0eh
@@ -484,6 +482,15 @@ game_process_two:
   
 
 player_step:
+  mov ax, 0001h
+  int 10h
+  test_flag(first)
+  jz .second
+  call turn1
+  jmp .continue
+  .second:
+  call turn2
+  .continue:
   mov ax, 1300h
   push bx
   mov bx, 0eh
@@ -505,6 +512,36 @@ player_step:
   int 10h
   pop bx
   jmp shot_choice
+  
+turn1:
+  push bx
+  push cx
+  push dx
+  mov ax, 1300h
+  mov bx, 0eh
+  mov bp, turn_player1
+  mov cx, turn_player1_len
+  mov dx, 0000h
+  int 10h
+  pop dx
+  pop cx
+  pop bx
+  ret
+  
+turn2:
+  push bx
+  push cx
+  push dx
+  mov ax, 1300h
+  mov bx, 0eh
+  mov bp, turn_player2
+  mov cx, turn_player2_len
+  mov dx, 0000h
+  int 10h
+  pop dx
+  pop cx
+  pop bx
+  ret
   
   
 print_field:
@@ -610,7 +647,7 @@ print_opponent_symb:
   je .print_X
   mov ax, 0a00h
   xor bx, bx
-  mov al, '-'
+  mov al, cl
   mov cx, 1
   int 10h
   pop bx
@@ -672,24 +709,20 @@ shot_choice:
   je completed_shot_choice 
   jmp shot_choice
   .move:
-  mov ax, 0200h ; move cursor to new position
-  int 10h
-  jmp shot_choice
-;||||||||||GOOD||||||
-test_shot_choice:
-  mov ah, 0ah
-  mov al, '&'
   push bx
+  mov ax, 0200h ; move cursor to new position
   xor bx, bx
   int 10h
   pop bx
-  jmp next_step
-;||||||||||BAD||||||||
+  jmp shot_choice
+
 completed_shot_choice:
+  push dx
+  push bx
   mov bx, dx
   sub bh, 3
   xor ax, ax
-  mov al, dh
+  mov al, bh
   push cx
   mov cx, 10
   mul cx
@@ -709,18 +742,19 @@ completed_shot_choice:
   .second:
   mov cx, word [player1_table + bx]
   .continue:
-  cmp cx, '.'
-  je .fire
-  cmp cx, '0'
-  je .fire
+  cmp cx, word '*'
+  je .no_fire
+  cmp cx, word 'X'
+  je .no_fire
   pop bx
-  jmp shot_choice
-  .fire:
-  pop bx
-  push dx
-  call shot
   pop dx
+  call shot
   jmp next_step
+  .no_fire:
+  pop bx
+  pop dx
+  
+  jmp shot_choice
   
 next_step:
   mov ax, [player1_result]
@@ -731,16 +765,27 @@ next_step:
   je player2_wins
   set_flag(first)
   set_flag(second)
-  jmp player_step
+  jmp ready_to_next_step
+  
+ready_to_next_step:
+  xor ax, ax
+  int 16h
+  cmp ax, 1c0dh
+  je player_step
+  jmp ready_to_next_step
   
 player1_wins:
+  mov ax, 0001h
+  int 10h
   mov ax, 1300h
   mov bx, 0eh
   mov bp, win1
   mov cx, win1_len
-  mov dx, 0100h
+  mov dx, 0a00h
   int 10h
   .enter:
+  xor ax, ax
+  xor bx, bx
   int 16h
   cmp ax, 1c0dh
   je battleship
@@ -748,13 +793,17 @@ player1_wins:
 
   
 player2_wins:
+  mov ax, 0001h
+  int 10h
   mov ax, 1300h
   mov bx, 0eh
   mov bp, win2
   mov cx, win2_len
-  mov dx, 0100h
+  mov dx, 0a00h
   int 10h
   .enter:
+  xor ax, ax
+  xor bx, bx
   int 16h
   cmp ax, 1c0dh
   je battleship
@@ -762,6 +811,7 @@ player2_wins:
   
 shot:
   push bx
+  push dx
   cmp cx, '.'
   je .miss
   cmp cx, 'O'
@@ -773,7 +823,9 @@ shot:
     mov cx, miss_len
     mov dx, 0100h
     int 10h
+    pop dx
     pop bx
+    
     call print_st
     jmp .continue
     
@@ -784,6 +836,7 @@ shot:
     mov cx, hit_len
     mov dx, 0100h
     int 10h
+    pop dx
     pop bx
     call print_X
   .continue:
@@ -794,10 +847,6 @@ print_st: ; print symbol * in dx coords
   push cx
   push bx
   xor bx, bx
-  mov ah, 0ah 
-  mov al, '*'
-  mov cx, 1 ; one time
-  int 10h
   mov cx, dx
   xor ax, ax
   sub ch, 3
@@ -829,10 +878,6 @@ print_X:
   push cx
   push bx
   xor bx, bx
-  mov ah, 0ah 
-  mov al, 'X'
-  mov cx, 1 ; one time
-  int 10h
   mov cx, dx
   xor ax, ax
   sub ch, 3
@@ -925,7 +970,7 @@ check_pos:
   
   
 
-SECTION .data
+section .data
   text_data: 
   db "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13, 10, " "
   text_data_len: equ $-text_data
@@ -957,7 +1002,6 @@ SECTION .data
   win1_len: equ $-win1
   win2: db "Player 2 wins!"
   win2_len: equ $-win2
-  
   mas: dw 4, 3, 3, 2, 2, 2, 1, 1, 1, 1
 
 section .bss
@@ -966,5 +1010,4 @@ section .bss
   length_index: resw 1
   player1_table: resw 100
   player2_table: resw 100
-  cur_table: resw 1
   players_count: resb 1
