@@ -189,7 +189,6 @@ print_O: ; print symbol O in dx coords
   mov al, 'O'
   mov cx, 1 ; one time
   int 10h
-  
   mov cx, dx
   xor ax, ax
   sub ch, 3
@@ -344,8 +343,8 @@ print_direction_error:
   push dx
   mov dx, 0000h
   int 10h
-  pop bx
   pop dx
+  pop bx
   jmp direction_choice
   
 print_up:
@@ -479,6 +478,12 @@ print_point_error:
   
 game_process_two:
   set_flag(second)
+  mov [player1_result], word 20
+  mov [player2_result], word 20
+  jmp player_step
+  
+
+player_step:
   mov ax, 1300h
   push bx
   mov bx, 0eh
@@ -488,18 +493,19 @@ game_process_two:
   int 10h
   mov dx, 0300h
   int 10h
-  test_flag(first)
-  jnz first_player_step
-  jmp first_player_step
-  
-
-first_player_step:
+  pop bx
   mov dx, 0e00h
   call print_field
   mov dx, 0300h
   call print_field
-  .cycle:
-  jmp .cycle
+  mov ax, 0200h
+  push bx
+  xor bx, bx
+  mov dx, 0300h
+  int 10h
+  pop bx
+  jmp shot_choice
+  
   
 print_field:
   push bx
@@ -522,27 +528,35 @@ print_field:
     add ax, bx
     mov bx, ax
     add bx, bx
+    mov cx, bx
+    pop bx
+    mov ax, bx
+    pop bx
     cmp dh, 0eh
     jl .opponent_field
     test_flag(first)
+    push bx
+    mov bx, cx
     jz .second
     mov cx, word [player1_table+bx]
     jmp .continue
     .second:
     mov cx, word [player2_table+bx]
     .continue:
-    pop bx
+    mov bx, ax
     call print_your_symb
     jmp .continue2
     .opponent_field:
     test_flag(first)
+    push bx
+    mov bx, cx
     jz .second_op
     mov cx, word [player2_table+bx]
     jmp .continue_op
     .second_op:
     mov cx, word [player1_table+bx]
     .continue_op:
-    pop bx
+    mov bx, ax
     call print_opponent_symb
     .continue2:
     inc bl
@@ -620,6 +634,239 @@ print_opponent_symb:
   pop ax
   ret
   
+shot_choice:
+  xor ax, ax
+  push bx
+  xor bx, bx
+  int 16h ; listen keyboard
+  pop bx
+  cmp ax, 4800h ; if up arrow
+  jne .continue
+  cmp dh, 03h; border of table
+  je .move
+  dec dh ; move up
+  jmp .move
+.continue:
+  cmp ax, 5000h ; if down arrow
+  jne .continue_2
+  cmp dh, 0ch ; border of table
+  je .move
+  inc dh ; move down
+  jmp .move
+.continue_2:
+  cmp ax, 4b00h  ;if left arrow
+  jne .continue_3
+  cmp dl,00h ; border of table
+  je .move
+  dec dl ; move left
+  jmp .move
+.continue_3:
+  cmp ax, 4d00h ; if right arrow
+  jne .continue_4
+  cmp dl, 09h ; border of table
+  je .move
+  inc dl ; move right
+  jmp .move
+.continue_4:
+  cmp ax, 1c0dh ; if enter
+  je completed_shot_choice 
+  jmp shot_choice
+  .move:
+  mov ax, 0200h ; move cursor to new position
+  int 10h
+  jmp shot_choice
+;||||||||||GOOD||||||
+test_shot_choice:
+  mov ah, 0ah
+  mov al, '&'
+  push bx
+  xor bx, bx
+  int 10h
+  pop bx
+  jmp next_step
+;||||||||||BAD||||||||
+completed_shot_choice:
+  mov bx, dx
+  sub bh, 3
+  xor ax, ax
+  mov al, dh
+  push cx
+  mov cx, 10
+  mul cx
+  pop cx
+  xor bh, bh
+  add ax, bx
+  mov bx, ax
+  add bx, bx
+  mov ax, bx
+  pop bx
+  test_flag(first)
+  push bx
+  mov bx, ax
+  jz .second
+  mov cx, word [player2_table + bx]
+  jmp .continue
+  .second:
+  mov cx, word [player1_table + bx]
+  .continue:
+  cmp cx, '.'
+  je .fire
+  cmp cx, '0'
+  je .fire
+  pop bx
+  jmp shot_choice
+  .fire:
+  pop bx
+  push dx
+  call shot
+  pop dx
+  jmp next_step
+  
+next_step:
+  mov ax, [player1_result]
+  cmp ax, 0
+  je player1_wins
+  mov ax, [player2_result]
+  cmp ax, 0
+  je player2_wins
+  set_flag(first)
+  set_flag(second)
+  jmp player_step
+  
+player1_wins:
+  mov ax, 1300h
+  mov bx, 0eh
+  mov bp, win1
+  mov cx, win1_len
+  mov dx, 0100h
+  int 10h
+  .enter:
+  int 16h
+  cmp ax, 1c0dh
+  je battleship
+  jmp .enter
+
+  
+player2_wins:
+  mov ax, 1300h
+  mov bx, 0eh
+  mov bp, win2
+  mov cx, win2_len
+  mov dx, 0100h
+  int 10h
+  .enter:
+  int 16h
+  cmp ax, 1c0dh
+  je battleship
+  jmp .enter
+  
+shot:
+  push bx
+  cmp cx, '.'
+  je .miss
+  cmp cx, 'O'
+  je .hit
+  .miss:
+    mov ax, 1300h
+    mov bx, 0eh
+    mov bp, miss
+    mov cx, miss_len
+    mov dx, 0100h
+    int 10h
+    pop bx
+    call print_st
+    jmp .continue
+    
+  .hit:
+    mov ax, 1300h
+    mov bx, 0eh
+    mov bp, hit
+    mov cx, hit_len
+    mov dx, 0100h
+    int 10h
+    pop bx
+    call print_X
+  .continue:
+    ret
+  
+print_st: ; print symbol * in dx coords
+  push dx
+  push cx
+  push bx
+  xor bx, bx
+  mov ah, 0ah 
+  mov al, '*'
+  mov cx, 1 ; one time
+  int 10h
+  mov cx, dx
+  xor ax, ax
+  sub ch, 3
+  mov al, ch
+  mov bx, 10
+  mul bx
+  xor ch, ch
+  add ax, cx
+  mov bx, ax
+  add bx, bx
+  mov cx, bx
+  pop bx
+  test_flag(second)
+  push bx
+  mov bx, cx
+  jnz .sec
+  mov [player2_table + bx], word '*'
+  jmp .finish
+  .sec:
+  mov [player1_table + bx], word '*'
+  .finish:
+  pop bx
+  pop cx
+  pop dx
+  ret
+  
+print_X:
+  push dx
+  push cx
+  push bx
+  xor bx, bx
+  mov ah, 0ah 
+  mov al, 'X'
+  mov cx, 1 ; one time
+  int 10h
+  mov cx, dx
+  xor ax, ax
+  sub ch, 3
+  mov al, ch
+  mov bx, 10
+  mul bx
+  xor ch, ch
+  add ax, cx
+  mov bx, ax
+  add bx, bx
+  mov cx, bx
+  pop bx
+  test_flag(second)
+  push bx
+  mov bx, cx
+  jnz .sec
+  mov ax, [player2_result]
+  dec ax
+  mov [player2_result], ax
+  mov [player2_table + bx], word 'X'
+  jmp .finish
+  .sec:
+  mov ax, [player1_result]
+  dec ax
+  mov [player1_result], ax
+  mov [player1_table + bx], word 'X'
+  .finish:
+  pop bx
+  pop cx
+  pop dx
+  ret
+
+  
+  
 
 check_pos:
   xor cx, cx
@@ -682,7 +929,6 @@ SECTION .data
   text_data: 
   db "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13, 10, " "
   text_data_len: equ $-text_data
-
   title: db "Welcome to battleship"
   title_len: equ $-title
   one_player: db "One player"
@@ -707,10 +953,16 @@ SECTION .data
   miss_len: equ $-miss
   hit: db "HIT!"
   hit_len: equ $-hit
+  win1: db "Player 1 wins!"
+  win1_len: equ $-win1
+  win2: db "Player 2 wins!"
+  win2_len: equ $-win2
   
   mas: dw 4, 3, 3, 2, 2, 2, 1, 1, 1, 1
 
 section .bss
+  player1_result: resw 1
+  player2_result: resw 1
   length_index: resw 1
   player1_table: resw 100
   player2_table: resw 100
