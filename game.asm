@@ -1,5 +1,6 @@
 %define first 1<<0
 %define second 1<<1
+%define is_hit 1<<2
 
 %define set_flag(a) xor bx, a
 %define test_flag(a) test bx, a
@@ -76,17 +77,20 @@ completed_choice:
   cmp dh, 04h
   je exit_game
   
-one_player_game:
-  ret
+one_player_game: ; it is not working
+  jmp battleship
   
 exit_game:
-  ret
+  mov ax,0002h
+  int 10h
+  int 20h
   
 ;||||||||||||||||||||||||||||||||||||||||||||||GAME FOR TWO PLAYERS||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 two_players_game_preparing:
   mov ax,0x0001 ; clear screen, set graphic mode 40x25, color
   int 10h
   push bx
+  ;print message for player 1
   mov ax, 1300h
   mov bx, 0eh
   mov bp, hello_player1
@@ -97,7 +101,7 @@ two_players_game_preparing:
   pop dx
   pop bx
   set_flag(first)
-  mov [length_index], word 0
+  mov [length_index], word 0 ; set insex in array of ship's length
   jmp two_players_game
   
 two_players_game:
@@ -114,7 +118,6 @@ two_players_game:
   mov ax, 0200h
   mov dx, 0300h ; set cursor in begin of table
   int 10h
-  mov cl, 0
   mov ax, 0100h
   mov cx, 001fh ; set cursor type
   int 10h
@@ -163,11 +166,6 @@ ship_choice:
   
 completed_ship_choice:
   push dx ; save cursor coords
-  ;!!!!
-  ;mov ax, 0100h
-  ;mov ch, 20h ; hide cursor
-  ;int 10h
-  ;!!!!
   push cx
   call check_pos ; cx == 1 => position is incorrect
   cmp cx, 1
@@ -175,15 +173,73 @@ completed_ship_choice:
   je print_point_error
   pop dx
   mov ax, 0200h 
+  int 10h 
+  jmp direction_choice ; go to choosing a direction of placing ship
+  
+
+check_pos: ; get (x, y) coords in dh:dl ans check positions (x+1, y), (x-1, y), (x, y+1),  (x, y-1) 
+; if one of this positions contains part of ship - position (x, y) is incorrect
+; return cx = 1 => incorrect, cx = 0 => correct
+  xor cx, cx
+  mov ax, 0800h
   int 10h
-  jmp direction_choice
+  cmp al, '.'
+  jne .fail
+  cmp dl, 9
+  je .continue_1
+  inc dl
+  mov ax, 0200h
+  int 10h
+  mov ax, 0800h
+  int 10h
+  cmp al, '.'
+  jne .fail
+  dec dl
+.continue_1:
+  cmp dl, 0
+  je .continue_2
+  dec dl
+  mov ax, 0200h
+  int 10h
+  mov ax, 0800h
+  int 10h
+  cmp al, '.'
+  jne .fail
+  inc dl
+.continue_2:
+  cmp dh, 0ch
+  je .continue_3
+  inc dh
+  mov ax, 0200h
+  int 10h
+  mov ax, 0800h
+  int 10h
+  cmp al, '.'
+  jne .fail
+  dec dh
+.continue_3:
+  cmp dh, 03h
+  je .continue_4
+  dec dh
+  mov ax, 0200h
+  int 10h
+  mov ax, 0800h
+  int 10h
+  cmp al, '.'
+  jne .fail
+  inc dh
+.continue_4:
+  ret
+.fail:
+  mov cx, 1
+  ret
   
 print_O: ; print symbol O in dx coords
   push dx
   push cx
   push bx
   xor bx, bx
-  mov ax, 0200h
+  mov ax, 0200h ; move cursor to dx coords
   int 10h
   mov ah, 0ah 
   mov al, 'O'
@@ -201,6 +257,7 @@ print_O: ; print symbol O in dx coords
   add bx, bx
   mov cx, bx
   pop bx
+  ;write printed symbol in memory
   test_flag(second)
   push bx
   mov bx, cx
@@ -243,7 +300,7 @@ up:
   mov bx, [length_index] ; get index in mas
   add bx, bx ; bx*=2
   mov ax, word [mas+bx] ; ax = max[bx]
-  mov cx, ax ;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  mov cx, ax 
   pop bx
   dec cx
   push dx ; save coords
@@ -266,7 +323,7 @@ down:
   mov bx, [length_index] ; get index in mas
   add bx, bx
   mov ax, word [mas+bx] ; ax = mas[bx]
-  mov cx, ax; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  mov cx, ax
   pop bx
   dec cx
   push dx ; save coords
@@ -289,7 +346,7 @@ left:
   mov bx, [length_index] ; get index in mas
   add bx, bx
   mov ax, word [mas+bx] ; ax = mas[bx]
-  mov cx, ax ; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  mov cx, ax
   pop bx
   dec cx
   push dx ; save coords
@@ -312,7 +369,7 @@ right:
   mov bx, [length_index] ; get index in mas
   add bx, bx
   mov ax, word [mas+bx] ; ax = mas[bx]
-  mov cx, ax ; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  mov cx, ax
   pop bx
   dec cx
   push dx ; save coords
@@ -333,7 +390,7 @@ right:
 
 print_direction_error:
   pop dx
-  mov ax, 0200h
+  mov ax, 0200h ; move cursor to dx coords
   int 10h
   mov ax, 1300h
   push bx
@@ -341,12 +398,14 @@ print_direction_error:
   mov bp, d_error
   mov cx, d_error_len
   push dx
-  mov dx, 0000h
+  mov dx, 0000h ; print error message
   int 10h
   pop dx
   pop bx
-  jmp direction_choice
+  jmp direction_choice ; try to choose direction again
   
+  
+; print_up, print_down, print_left, print_right are required for printing ship on the screen in direction which was set before this
 print_up:
   pop dx
   push bx
@@ -430,14 +489,14 @@ end_direction:
   int 10h
   mov cx, [length_index]
   inc cx
-  mov [length_index], cx
+  mov [length_index], cx ; if player is already set all his ships, go to next player. Else set next ship
   cmp cx, 10
   je next_player 
   jmp ship_choice
 
 next_player:
   mov [length_index], word 0
-  test_flag(second)
+  test_flag(second) ;if player 2 already set his ships, go to game process, else go to setting ships
   jnz game_process_two
   set_flag(second)
   mov ax, 1300h
@@ -447,13 +506,13 @@ next_player:
   mov cx, hello_player2_len
   push dx
   mov dx, 0000h
-  int 10h
+  int 10h ; print start message for player 2
   pop dx
   pop bx
   jmp two_players_game
   
   
-print_point_error:
+print_point_error: ; if you chose illegal point to set your ship, print message about it
   pop dx
   mov ax, 0200h
   int 10h
@@ -476,7 +535,7 @@ print_point_error:
   
 game_process_two:
   set_flag(second)
-  mov [player1_result], word 20
+  mov [player1_result], word 20 ; counter of points which wasn't hit
   mov [player2_result], word 20
   jmp player_step
   
@@ -486,10 +545,10 @@ player_step:
   int 10h
   test_flag(first)
   jz .second
-  call turn1
+  call turn1 ; print message for player 1
   jmp .continue
   .second:
-  call turn2
+  call turn2 ; print message for player 2
   .continue:
   mov ax, 1300h
   push bx
@@ -497,13 +556,13 @@ player_step:
   mov bp, text_data
   mov cx, text_data_len
   mov dx, 0e00h
-  int 10h
+  int 10h ;print game field
   mov dx, 0300h
-  int 10h
+  int 10h ; two times
   pop bx
-  mov dx, 0e00h
+  mov dx, 0e00h ;print current player's field
   call print_field
-  mov dx, 0300h
+  mov dx, 0300h ;print opponent's field
   call print_field
   mov ax, 0200h
   push bx
@@ -523,6 +582,21 @@ turn1:
   mov cx, turn_player1_len
   mov dx, 0000h
   int 10h
+  mov bp, p_enter
+  mov cx, p_enter_len
+  mov dx, 0300h
+  int 10h
+  .wait: ; wait for pressing enter of player. it means that player is ready to game
+  xor ax, ax
+  int 16h
+  cmp ax, 1c0dh
+  jne .wait
+  mov ax, 1300h
+  mov bx, 0eh
+  mov bp, empty
+  mov cx, empty_len
+  mov dx, 0300h
+  int 10h
   pop dx
   pop cx
   pop bx
@@ -538,22 +612,38 @@ turn2:
   mov cx, turn_player2_len
   mov dx, 0000h
   int 10h
+  mov bp, p_enter
+  mov cx, p_enter_len
+  mov dx, 0300h
+  int 10h
+  .wait: ; wait for pressing enter of player. it means that player is ready to game
+  xor ax, ax
+  int 16h
+  cmp ax, 1c0dh
+  jne .wait
+  mov ax, 1300h
+  mov bx, 0eh
+  mov bp, empty
+  mov cx, empty_len
+  mov dx, 0300h
+  int 10h
   pop dx
   pop cx
   pop bx
   ret
   
-  
+;in -> dx - start postion of cursor
 print_field:
   push bx
   mov bx, 0000h
-.cycle1:
-  .cycle2:
+.cycle1: ;for (bh = 0; bh<10; bh++)
+  .cycle2: ;for (bl = 0; bl<10; bl++)
     mov ax, 0200h
     push bx
-    mov bx, 0
-    int 10h
+    xor bx, bx
+    int 10h ;move dx to start
     pop bx
+    ;counting of address of current position in memory
     xor ax, ax
     mov al, bh
     push dx
@@ -564,53 +654,53 @@ print_field:
     xor bh, bh
     add ax, bx
     mov bx, ax
-    add bx, bx
+    add bx, bx ;bx*=2 because array of words
     mov cx, bx
     pop bx
     mov ax, bx
     pop bx
-    cmp dh, 0eh
+    cmp dh, 0eh ; check if it's player's field
     jl .opponent_field
     test_flag(first)
     push bx
     mov bx, cx
-    jz .second
+    jz .second ;depends on in-game-player
     mov cx, word [player1_table+bx]
     jmp .continue
     .second:
     mov cx, word [player2_table+bx]
     .continue:
     mov bx, ax
-    call print_your_symb
+    call print_your_symb; print symbol in cx if it's player's field
     jmp .continue2
     .opponent_field:
     test_flag(first)
     push bx
     mov bx, cx
-    jz .second_op
+    jz .second_op ;depends on in-game-player
     mov cx, word [player2_table+bx]
     jmp .continue_op
     .second_op:
     mov cx, word [player1_table+bx]
     .continue_op:
     mov bx, ax
-    call print_opponent_symb
+    call print_opponent_symb ; print symbol in cx if it's opponent's field
     .continue2:
-    inc bl
+    inc bl ; increment second indexes in memory and on screen
     inc dl
     cmp bl, 10
     jne .cycle2
   xor bl, bl
   xor dl, dl
   inc bh
-  inc dh
+  inc dh ; increment first indexes in memory and on screen
   cmp bh, 10
   jne .cycle1
   
   pop bx
   ret
   
-print_your_symb:
+print_your_symb:; print synbol on player's field, if it's X or O
   push ax
   push bx
   cmp cx, 'O'
@@ -638,7 +728,7 @@ print_your_symb:
   pop ax
   ret
   
-print_opponent_symb:
+print_opponent_symb: ; print synbol on player's field, if it's X or *. Else print '-' - unknown position 
   push ax
   push bx
   cmp cx, '*'
@@ -647,7 +737,7 @@ print_opponent_symb:
   je .print_X
   mov ax, 0a00h
   xor bx, bx
-  mov al, cl
+  mov al, '-'
   mov cx, 1
   int 10h
   pop bx
@@ -671,7 +761,7 @@ print_opponent_symb:
   pop ax
   ret
   
-shot_choice:
+shot_choice: ; choose an aim
   xor ax, ax
   push bx
   xor bx, bx
@@ -716,9 +806,10 @@ shot_choice:
   pop bx
   jmp shot_choice
 
-completed_shot_choice:
+completed_shot_choice: ; if aim chose
   push dx
   push bx
+  ;count address of chosen position in memory
   mov bx, dx
   sub bh, 3
   xor ax, ax
@@ -733,7 +824,7 @@ completed_shot_choice:
   add bx, bx
   mov ax, bx
   pop bx
-  test_flag(first)
+  test_flag(first) ; depends on in-game-player
   push bx
   mov bx, ax
   jz .second
@@ -742,7 +833,8 @@ completed_shot_choice:
   .second:
   mov cx, word [player1_table + bx]
   .continue:
-  cmp cx, word '*'
+  mov [current_address], bx
+  cmp cx, word '*' ;if you had alredy chosen this position, return to choice
   je .no_fire
   cmp cx, word 'X'
   je .no_fire
@@ -756,25 +848,31 @@ completed_shot_choice:
   
   jmp shot_choice
   
-next_step:
+next_step: ; count saved postions of each player, and finish game if smb wins
   mov ax, [player1_result]
   cmp ax, 0
-  je player1_wins
+  je player2_wins
   mov ax, [player2_result]
   cmp ax, 0
-  je player2_wins
-  set_flag(first)
+  je player1_wins
+  test_flag(is_hit)
+  jnz .hit
+  set_flag(first) ; swap players flag
   set_flag(second)
   jmp ready_to_next_step
+  .hit:
+  set_flag(is_hit)
+  jmp ready_to_next_step
   
-ready_to_next_step:
+ready_to_next_step: ;wait for pressing enter of player who finished turn
   xor ax, ax
   int 16h
   cmp ax, 1c0dh
   je player_step
   jmp ready_to_next_step
-  
-player1_wins:
+
+; print messages about win
+player1_wins: 
   mov ax, 0001h
   int 10h
   mov ax, 1300h
@@ -788,7 +886,7 @@ player1_wins:
   xor bx, bx
   int 16h
   cmp ax, 1c0dh
-  je battleship
+  je clean_memory
   jmp .enter
 
   
@@ -806,57 +904,222 @@ player2_wins:
   xor bx, bx
   int 16h
   cmp ax, 1c0dh
-  je battleship
+  je clean_memory
   jmp .enter
   
+clean_memory:
+  xor bx, bx
+  .cycle:
+    mov [player1_table+bx], word ' '
+    mov [player2_table+bx], word ' '
+    add bx, 2
+    cmp bx, 200
+    jl .cycle
+  xor bx, bx
+  jmp battleship
+  
 shot:
-  push bx
   push dx
-  cmp cx, '.'
-  je .miss
-  cmp cx, 'O'
+  push bx
+  cmp cx, 'O' ;check if player missed
   je .hit
   .miss:
+    ;if miss - say about it and save miss symb in memory
     mov ax, 1300h
     mov bx, 0eh
     mov bp, miss
     mov cx, miss_len
     mov dx, 0100h
     int 10h
-    pop dx
     pop bx
+    pop dx
     
     call print_st
     jmp .continue
     
   .hit:
+    ;if hit - check "kill" or "hit" and save hit symbol in memory
+    pop bx
+    call hit_or_kill
+    push bx
+    cmp cx, 1
+    je .killed
     mov ax, 1300h
     mov bx, 0eh
     mov bp, hit
     mov cx, hit_len
     mov dx, 0100h
     int 10h
-    pop dx
+    jmp .skip
+    .killed: 
+    mov ax, 1300h
+    mov bx, 0eh
+    mov bp, kill
+    mov cx, kill_len
+    mov dx, 0100h
+    int 10h
+    .skip:
     pop bx
+    set_flag(is_hit)
+    pop dx
     call print_X
   .continue:
     ret
+  
+  
+hit_or_kill: 
+;this method goes from current position in all 4 dirctions until first symbol of empty position or reaching borders or symbol of ship which wasn't hit
+;if it reachs ship symbol - it is not killing
+;else current ship was killed
+  xor ax, ax
+  
+  mov dx, 3
+  
+  push bx
+  mov bx, [current_address]
+  .right:
+  cmp dx, 0
+  je .skip_right
+  add bx, 2
+  push bx
+  mov ax, bx
+  mov bl, 20
+  div bl
+  pop bx
+  cmp ah, 0
+  je .skip_right
+  mov ax, bx
+  pop bx
+  call read_symbol
+  push bx
+  mov bx, ax
+  cmp cx, 'O'
+  je .false
+  cmp cx, 'X'
+  je .skip_right1
+  jmp .skip_right
+  .skip_right1:
+  dec dx
+  jmp .right
+  .skip_right:
+  pop bx
+  
+  mov dx, 3
+  
+  push bx
+  mov bx, [current_address]
+  .left:
+  cmp dx, 0
+  je .skip_left
+  sub bx, 2
+  cmp bx, 0
+  jl  .skip_left
+  push bx
+  mov ax, bx
+  mov bl, 20
+  div bl
+  pop bx
+  cmp ah, 18
+  je .skip_left
+  mov ax, bx
+  pop bx
+  call read_symbol
+  push bx
+  mov bx, ax
+  cmp cx, 'O'
+  je .false
+  cmp cx, 'X'
+  je .skip_left1
+  jmp .skip_left
+  .skip_left1:
+  dec dx
+  jmp .left
+  .skip_left:
+  pop bx
+  
+  mov dx, 3
+  
+  push bx
+  mov bx, [current_address]
+  .up:
+  cmp dx, 0
+  je .skip_up
+  sub bx, 20
+  cmp bx, 0
+  jl .skip_up
+  mov ax, bx
+  pop bx
+  call read_symbol
+  push bx
+  mov bx, ax
+  cmp cx, 'O'
+  je .false
+  cmp cx, 'X'
+  je .skip_up1
+  jmp .skip_up
+  .skip_up1:
+  dec dx
+  jmp .up
+  .skip_up:
+  pop bx
+  
+  mov dx, 3
+  
+  push bx
+  mov bx, [current_address]
+  .down:
+  cmp dx, 0
+  je .skip_down
+  add bx, 20
+  cmp bx, 200
+  jge .skip_down
+  mov ax, bx
+  pop bx
+  call read_symbol
+  push bx
+  mov bx, ax
+  cmp cx, 'O'
+  je .false
+  cmp cx, 'X'
+  je .skip_down1
+  jmp .skip_down
+  .skip_down1:
+  dec dx
+  jmp .down
+  .skip_down:
+  pop bx
+  
+  jmp .true
+  
+  .false:
+    pop bx
+    mov cx, 0
+    ret
+  .true:
+    mov cx, 1
+    ret
+  
+  
+read_symbol: ; return read symbol in cx
+  push bx
+  push dx
+  test_flag(first)
+  mov bx, ax
+  jz .second
+  mov cx, word [player2_table+bx]
+  jmp .continue
+  .second:
+  mov cx, word [player1_table+bx]
+  .continue:
+  pop dx
+  pop bx
+  ret
   
 print_st: ; print symbol * in dx coords
   push dx
   push cx
   push bx
-  xor bx, bx
-  mov cx, dx
-  xor ax, ax
-  sub ch, 3
-  mov al, ch
-  mov bx, 10
-  mul bx
-  xor ch, ch
-  add ax, cx
-  mov bx, ax
-  add bx, bx
+  mov bx, [current_address]
   mov cx, bx
   pop bx
   test_flag(second)
@@ -873,21 +1136,11 @@ print_st: ; print symbol * in dx coords
   pop dx
   ret
   
-print_X:
+print_X: ; print symbol 'X' in dx coords
   push dx
   push cx
   push bx
-  xor bx, bx
-  mov cx, dx
-  xor ax, ax
-  sub ch, 3
-  mov al, ch
-  mov bx, 10
-  mul bx
-  xor ch, ch
-  add ax, cx
-  mov bx, ax
-  add bx, bx
+  mov bx, [current_address]
   mov cx, bx
   pop bx
   test_flag(second)
@@ -911,72 +1164,19 @@ print_X:
   ret
 
   
-  
 
-check_pos:
-  xor cx, cx
-  mov ax, 0800h
-  int 10h
-  cmp al, '.'
-  jne .fail
-  cmp dl, 9
-  je .continue_1
-  inc dl
-  mov ax, 0200h
-  int 10h
-  mov ax, 0800h
-  int 10h
-  cmp al, '.'
-  jne .fail
-  dec dl
-.continue_1:
-  cmp dl, 0
-  je .continue_2
-  dec dl
-  mov ax, 0200h
-  int 10h
-  mov ax, 0800h
-  int 10h
-  cmp al, '.'
-  jne .fail
-  inc dl
-.continue_2:
-  cmp dh, 0ch
-  je .continue_3
-  inc dh
-  mov ax, 0200h
-  int 10h
-  mov ax, 0800h
-  int 10h
-  cmp al, '.'
-  jne .fail
-  dec dh
-.continue_3:
-  cmp dh, 03h
-  je .continue_4
-  dec dh
-  mov ax, 0200h
-  int 10h
-  mov ax, 0800h
-  int 10h
-  cmp al, '.'
-  jne .fail
-  inc dh
-.continue_4:
-  ret
-.fail:
-  mov cx, 1
-  ret
   
   
 
 section .data
+  ;empty game field
   text_data: 
   db "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13,10, "..........", 13, 10, " "
   text_data_len: equ $-text_data
+  ; some in-game messages
   title: db "Welcome to battleship"
   title_len: equ $-title
-  one_player: db "One player"
+  one_player: db "One player (coming soon)"
   one_player_len: equ $-one_player
   two_players: db "Two players"
   two_players_len: equ $-two_players
@@ -1002,12 +1202,19 @@ section .data
   win1_len: equ $-win1
   win2: db "Player 2 wins!"
   win2_len: equ $-win2
+  kill: db "KILL!"
+  kill_len: equ $-kill
+  p_enter: db "Press ENTER"
+  p_enter_len: equ $-p_enter
+  empty: db "             "
+  empty_len: equ $-empty
+  ; array of ship's length
   mas: dw 4, 3, 3, 2, 2, 2, 1, 1, 1, 1
 
 section .bss
-  player1_result: resw 1
+  player1_result: resw 1 ; score of players
   player2_result: resw 1
-  length_index: resw 1
-  player1_table: resw 100
-  player2_table: resw 100
-  players_count: resb 1
+  length_index: resw 1 ; index in array of ship's length
+  player1_table: resw 100 ; field of player 1
+  player2_table: resw 100 ; and player 2
+  current_address: resw 1 ; address of position which was hit
