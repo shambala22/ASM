@@ -5,8 +5,8 @@
 %define set_flag(a) xor bx, a
 %define test_flag(a) test bx, a
 
-SECTION .text
-org 0x100 ; для .com файлов. Это не команда, а указания на сдвиг адресов.
+section .text
+org 0x100 ; for .com files
 
 battleship: 
   mov ax,0x0001 ; clear screen, set graphic mode 40x25, color
@@ -1162,11 +1162,6 @@ print_X: ; print symbol 'X' in dx coords
   pop cx
   pop dx
   ret
-
-  
-
-  
-  
 
 section .data
   ;empty game field
